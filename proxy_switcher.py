@@ -1,9 +1,6 @@
-from flask import Flask
-from flask import request
-
+from aiohttp import web
 from proxy import ProxyManager
 
-app = Flask(__name__)
 
 with open('proxy_list.txt') as f:
     s = f.read()
@@ -16,66 +13,83 @@ proxy_managers = {
     None: ProxyManager(list(proxy_list), 'default')
 }
 
-
-@app.route('/bad_proxy')
-def bad_proxy():
-    proxy = request.args.get('proxy')
-    source = request.args.get('source')
-    if proxy:
-        proxy_managers[source].cold_proxy(proxy)
-        return 'OK'
-    return 'FAIL'
+routes = web.RouteTableDef()
 
 
-@app.route('/get_proxy')
-def get_proxy():
-    args = request.args
+@routes.get('/')
+async def index(request):
+    source = request.query.get('source')
+    if source and source in proxy_managers:
+        proxies_stat = proxy_managers[source].statistics()
+    else:
+        proxies_stat = proxy_managers[None].statistics()
+    stat_list = [f'source {source}', 'address\t\tbad_count']
+    for addr, bad_req_n in proxies_stat.items():
+        stat_list.append(f'{addr}\t\t{bad_req_n}')
+    return web.Response(text='\n'.join(stat_list))
+
+
+@routes.get('/bad_proxy')
+async def bad_proxy(request):
+    addr = request.query.get('proxy')
+    source = request.query.get('source')
+    text = 'FAIL'
+    if addr:
+        proxy_managers[source].cold_proxy(addr)
+        text = 'OK'
+    return web.Response(text=text)
+
+
+@routes.get('/get_proxy')
+async def get_proxy(request):
+    args = request.query
+    text = 'FAIL'
     proxy = proxy_managers[args.get('source')].get_proxy()
     if proxy:
-        return str(proxy)
-    return 'FAIL'
+        text = str(proxy)
+    return web.Response(text=text)
+
+# @app.route('/config', methods=['GET', 'POST'])
+# def config():
+#     if request.method == 'POST':
+#         data = request.json
+#         if data.get('source'):
+#             print('config', data)
+#             return 'OK'
+#     return 'FAIL'
 
 
-@app.route('/config', methods=['GET', 'POST'])
-def config():
-    if request.method == 'POST':
-        data = request.json
-        if data.get('source'):
-            print('config', data)
-            return 'OK'
-    return 'FAIL'
+@routes.post('/upload_proxy')
+async def upload_proxy(request):
+    data = await request.post()
+    if data.get('proxies'):
+        proxy_managers[data.get('source')].add_proxies(data['proxies'])
 
 
-@app.route('/upload_proxy')
-def upload_proxy():
-    if request.method == 'POST':
-        data = request.json
-        if data.get('proxies'):
-            proxy_managers[data.get('source')].add_proxies(data['proxies'])
-
-
-@app.route('/action/<string:act>')
-def action(act):
+@routes.post('/action/{action}')
+async def action(request):
     actions = {
-        'clear': clear,
-        'load': lambda: [pm.load() for pm in proxy_managers.values()],
-        'save': lambda: [pm.save() for pm in proxy_managers.values()]
-    }
+            'clear': clear,
+            'load': lambda req: [pm.load() for pm in proxy_managers.values()],
+            'save': lambda req: [pm.save() for pm in proxy_managers.values()]
+        }
+    text = 'FAIL'
+    act = request.match_info['action']
     if act in actions:
-        actions[act]()
-        return 'OK'
-    return 'FAIL ACTION'
+        actions[act](request)
+        text = 'OK'
+    return web.Response(text=text)
 
 
-def clear():
+async def clear(request):
     if request.method == 'POST':
-        data = request.json
+        data = await request.post()
         proxies = data.get('proxies')
         source = data.get('source')
 
     else:
-        source = request.args.get('source')
-        proxies = request.args.get('proxies')
+        source = request.query.get('source')
+        proxies = request.query.get('proxies')
 
     if source.lower() == 'all':
         sources = proxy_managers.keys()
@@ -88,5 +102,6 @@ def clear():
 
 
 if __name__ == '__main__':
-    # app.debug = True
-    app.run(host="0.0.0.0", port=4000)
+    app = web.Application()
+    app.add_routes(routes)
+    web.run_app(app, host='0.0.0.0', port=4000)

@@ -116,6 +116,9 @@ class ProxyManager:
     def set_params(self, params):
         pass
 
+    def statistics(self):
+        return {str(proxy): proxy.bad_request for proxy in self._proxies}
+
 
 if __name__ == '__main__':
     p1 = Proxy('addr', 8080, 'avito', 'sock4')
