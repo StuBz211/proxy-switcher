@@ -11,7 +11,7 @@ WORKDIR /
 RUN pip install -r requirements.txt
 
 # expose the app port
-EXPOSE 5000
+EXPOSE 4000
 
 CMD python proxy_switcher.py
 # run the app server

@@ -9,6 +9,7 @@ with open('proxy_list.txt') as f:
 proxy_managers = {
     'avito.ru': ProxyManager(list(proxy_list), 'avito.ru'),
     'auto.ru': ProxyManager(list(proxy_list), 'auto.ru'),
+    'drom.ru': ProxyManager(list(proxy_list), 'drom.ru'),
     'youla.ru': ProxyManager(list(proxy_list), 'youla.ru'),
     None: ProxyManager(list(proxy_list), 'default')
 }
@@ -22,6 +23,7 @@ async def index(request):
     if source and source in proxy_managers:
         proxies_stat = proxy_managers[source].statistics()
     else:
+        source = None
         proxies_stat = proxy_managers[None].statistics()
     stat_list = [f'source {source}', 'address\t\tbad_count']
     for addr, bad_req_n in proxies_stat.items():
@@ -33,37 +35,35 @@ async def index(request):
 async def bad_proxy(request):
     addr = request.query.get('proxy')
     source = request.query.get('source')
-    text = 'FAIL'
+    status = 'FAIL'
     if addr:
         proxy_managers[source].cold_proxy(addr)
-        text = 'OK'
-    return web.Response(text=text)
+        status = 'OK'
+    return web.json_response({'status': status})
 
 
 @routes.get('/get_proxy')
 async def get_proxy(request):
     args = request.query
-    text = 'FAIL'
+    response_data = {'status': 'FAIL'}
     proxy = proxy_managers[args.get('source')].get_proxy()
     if proxy:
-        text = str(proxy)
-    return web.Response(text=text)
+        response_data['address'] = str(proxy)
+        response_data['type'] = proxy.proxy_type
+        response_data['status'] = 'OK'
+        response_data['bad_request'] = proxy.bad_request
 
-# @app.route('/config', methods=['GET', 'POST'])
-# def config():
-#     if request.method == 'POST':
-#         data = request.json
-#         if data.get('source'):
-#             print('config', data)
-#             return 'OK'
-#     return 'FAIL'
+    return web.json_response(response_data)
 
 
 @routes.post('/upload_proxy')
 async def upload_proxy(request):
-    data = await request.post()
+    resp_data = {'status': 'FAIL'}
+    data = await request.json()
     if data.get('proxies'):
         proxy_managers[data.get('source')].add_proxies(data['proxies'])
+        resp_data['status'] = 'OK'
+    return web.json_response(resp_data)
 
 
 @routes.post('/action/{action}')
@@ -73,23 +73,18 @@ async def action(request):
             'load': lambda req: [pm.load() for pm in proxy_managers.values()],
             'save': lambda req: [pm.save() for pm in proxy_managers.values()]
         }
-    text = 'FAIL'
+    resp_data = {'status': 'FAIL'}
     act = request.match_info['action']
     if act in actions:
         actions[act](request)
-        text = 'OK'
-    return web.Response(text=text)
+        resp_data['status'] = 'OK'
+    return web.json_response(resp_data)
 
 
 async def clear(request):
-    if request.method == 'POST':
-        data = await request.post()
-        proxies = data.get('proxies')
-        source = data.get('source')
-
-    else:
-        source = request.query.get('source')
-        proxies = request.query.get('proxies')
+    data = await request.json()
+    proxies = data.get('proxies')
+    source = data.get('source')
 
     if source.lower() == 'all':
         sources = proxy_managers.keys()

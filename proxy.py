@@ -16,7 +16,7 @@ class Proxy:
         self._address = address
         self._port = port
         self._source = source
-        self._proxy_type = proxy_type
+        self.proxy_type = proxy_type
         self.countdown = None
         self.bad_request = 0
 
@@ -91,11 +91,14 @@ class ProxyManager:
         else:
             self._proxies = []
 
-    def get_proxy(self):
+    def get_proxy(self, proxy_type=None):
         while not self.is_empty():
             proxy = heappop(self._proxies)
             if proxy.bad_request >= self.bad_max:
                 logger.info(f'skip bad proxy, {str(proxy)}')
+                continue
+
+            if proxy_type is not None and proxy_type != proxy.proxy_type:
                 continue
             proxy.cold(self.default_countdown)
             heappush(self._proxies, proxy)
@@ -106,12 +109,18 @@ class ProxyManager:
             if proxy_address in str(proxy):
                 logger.info(f'cold proxy, {str(proxy)}')
                 proxy.bad_cold(self.bad_countdown)
+                break
 
     def add_proxies(self, proxies):
         logger.info(f'add {len(proxies)} proxies')
         for i, proxy in enumerate(proxies):
-            address, port = proxy.split(':')
-            heappush(self._proxies, Proxy(address, port, self._source))
+            splits = proxy.split(':')
+            if len(splits) == 3:
+                proxy_type, address, port = splits
+            else:
+                address, port = splits
+                proxy_type = 'http'
+            heappush(self._proxies, Proxy(address, port, self._source, proxy_type=proxy_type))
 
     def set_params(self, params):
         pass
