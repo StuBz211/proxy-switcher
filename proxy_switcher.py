@@ -1,4 +1,4 @@
-from aiohttp import web
+from aiohttp import web, ClientSession
 from proxy import ProxyManager
 
 
@@ -64,6 +64,25 @@ async def upload_proxy(request):
         proxy_managers[data.get('source')].add_proxies(data['proxies'])
         resp_data['status'] = 'OK'
     return web.json_response(resp_data)
+
+
+@routes.get('/autoload')
+async def autoload(request):
+    new_proxies = []
+    async with ClientSession() as session:
+        async with session.get('https://www.proxy-list.download/api/v1/get?type=socks4&country=RU') as resp:
+            lines = await resp.text()
+            new_proxies.extend([i.strip() for i in lines.split('\n') if i.strip()])
+
+    async with ClientSession() as session:
+        async with session.get('http://api.foxtools.ru/v2/Proxy?cp=UTF-8&lang=Auto&type=HTTP&anonymity=None&country=%D0%A0%D0%BE%D1%81%D1%81%D0%B8%D1%8F&formatting=1') as resp:
+            data = await resp.json()
+            new_proxies.extend(['{}:{}'.format(i['ip'], i['port']) for i in data['response']['items']])
+    for source in proxy_managers:
+        proxy_managers[source].add_proxies(new_proxies)
+        proxy_managers[source].save()
+
+    return web.json_response({'status': 'OK'})
 
 
 @routes.post('/action/{action}')

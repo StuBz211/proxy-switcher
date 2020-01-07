@@ -113,7 +113,8 @@ class ProxyManager:
 
     def add_proxies(self, proxies):
         logger.info(f'add {len(proxies)} proxies')
-        for i, proxy in enumerate(proxies):
+        proxies = set(proxies) - set(self._proxies)
+        for i, proxy in enumerate(list(proxies)):
             splits = proxy.split(':')
             if len(splits) == 3:
                 proxy_type, address, port = splits
